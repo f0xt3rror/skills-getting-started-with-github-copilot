@@ -12,6 +12,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Clear loading message
       activitiesList.innerHTML = "";
+      // Reset activity select to avoid duplicate options on refresh
+      activitySelect.innerHTML = '<option value="">-- Select an activity --</option>';
 
       // Populate activities list
       Object.entries(activities).forEach(([name, details]) => {
@@ -20,14 +22,59 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const spotsLeft = details.max_participants - details.participants.length;
 
+        const participantsHtml = (details.participants || []).map(p => `
+          <li>
+            <span class="participant-email">${p}</span>
+            <button class="participant-delete" data-email="${p}" title="Remove participant">✖</button>
+          </li>
+        `).join('');
+
         activityCard.innerHTML = `
           <h4>${name}</h4>
           <p>${details.description}</p>
           <p><strong>Schedule:</strong> ${details.schedule}</p>
           <p><strong>Availability:</strong> ${spotsLeft} spots left</p>
+          <div class="participants">
+            <p><strong>Participants:</strong></p>
+            <ul class="participants-list">
+              ${participantsHtml}
+            </ul>
+          </div>
         `;
 
         activitiesList.appendChild(activityCard);
+        // Attach delete handlers for participant removal
+        const deleteButtons = activityCard.querySelectorAll('.participant-delete');
+        deleteButtons.forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            const email = btn.dataset.email;
+            if (!confirm(`Remove ${email} from ${name}?`)) return;
+            try {
+              const res = await fetch(
+                `/activities/${encodeURIComponent(name)}/participants?email=${encodeURIComponent(email)}`,
+                { method: 'DELETE' }
+              );
+              const result = await res.json();
+              if (res.ok) {
+                // Refresh the activities and select options
+                fetchActivities();
+                messageDiv.textContent = result.message;
+                messageDiv.className = 'success';
+                messageDiv.classList.remove('hidden');
+                setTimeout(() => messageDiv.classList.add('hidden'), 3000);
+              } else {
+                messageDiv.textContent = result.detail || 'Failed to remove participant';
+                messageDiv.className = 'error';
+                messageDiv.classList.remove('hidden');
+              }
+            } catch (err) {
+              console.error('Error removing participant:', err);
+              messageDiv.textContent = 'Failed to remove participant. Please try again.';
+              messageDiv.className = 'error';
+              messageDiv.classList.remove('hidden');
+            }
+          });
+        });
 
         // Add option to select dropdown
         const option = document.createElement("option");
@@ -47,6 +94,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const email = document.getElementById("email").value;
     const activity = document.getElementById("activity").value;
+    const submitButton = signupForm.querySelector('button[type="submit"]');
+
+    // Disable submit to prevent duplicate submissions
+    if (submitButton) submitButton.disabled = true;
 
     try {
       const response = await fetch(
@@ -62,6 +113,8 @@ document.addEventListener("DOMContentLoaded", () => {
         messageDiv.textContent = result.message;
         messageDiv.className = "success";
         signupForm.reset();
+        // Refresh activities to show updated participants and availability
+        fetchActivities();
       } else {
         messageDiv.textContent = result.detail || "An error occurred";
         messageDiv.className = "error";
@@ -78,6 +131,8 @@ document.addEventListener("DOMContentLoaded", () => {
       messageDiv.className = "error";
       messageDiv.classList.remove("hidden");
       console.error("Error signing up:", error);
+    } finally {
+      if (submitButton) submitButton.disabled = false;
     }
   });
 
